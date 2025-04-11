@@ -1,22 +1,21 @@
 import os
 from dotenv import load_dotenv
-from kusa.client import SecureDatasetClient
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import classification_report, confusion_matrix
 import seaborn as sns
 import matplotlib.pyplot as plt
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.ensemble import GradientBoostingClassifier
-
 from inspect import signature
 from sklearn.base import BaseEstimator
+from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.ensemble import GradientBoostingClassifier
+
+from kusa.client import SecureDatasetClient
 
 load_dotenv()
 
+# ✅ Universal training function builder
 def train_model_factory(model_class: BaseEstimator, fixed_params=None):
     """
-    Creates a universal training function that accepts only valid params for the model.
-    Also warns about invalid params passed by the user.
+    Creates a safe training function for any sklearn model,
+    filtering out unsupported hyperparameters.
     """
     fixed_params = fixed_params or {}
 
@@ -38,64 +37,67 @@ def train_model_factory(model_class: BaseEstimator, fixed_params=None):
 
     return train_model
 
-
+# ✅ Main pipeline
 def main():
-    # Load credentials
     PUBLIC_ID = os.getenv("PUBLIC_ID")
     SECRET_KEY = os.getenv("SECRET_KEY")
 
-    # Step 1: Initialize secure client
+    print("🔐 Initializing secure client...")
     client = SecureDatasetClient(public_id=PUBLIC_ID, secret_key=SECRET_KEY)
     initialization = client.initialize()
-    # Step 2: Load encrypted dataset into memory
+    
+    print("📦 Fetching and decrypting dataset...")
     client.fetch_and_decrypt_batch(batch_size=500, batch_number=1)
 
-    # Step 3: Configure preprocessing
+    print("⚙️ Configuring preprocessing...")
     client.configure_preprocessing({
-         "tokenizer": "nltk",
+        "tokenizer": "nltk",
         "stopwords": True,
         "reduction": "tfidf",
         "target_column": "RainTomorrow"
     })
     client.run_preprocessing()
 
-    train_model = train_model_factory(RandomForestClassifier, fixed_params={"class_weight": "balanced"})
-    # Step 4: Train model using internal data
+    print("🎯 Creating training function for Gradient Boosting...")
+    train_model = train_model_factory(
+        GradientBoostingClassifier,
+        fixed_params={}  # Add if you want default consistent params
+    )
+
+    print("🚀 Training model...")
     client.train(
         user_train_func=train_model,
         hyperparams={
-            "C": 1.0,
-            "solver": "liblinear",
-            "max_iter": 1000,
-             "n_estimators": 200,
-        "learning_rate": 0.05
+            "n_estimators": 200,
+            "learning_rate": 0.05
         },
-        target_column="RainTomorrow"  # Make sure this column is your label (e.g., spam/ham)
+        target_column="RainTomorrow"
     )
 
-    # Step 5: Evaluate the model
+    print("📈 Evaluating model...")
     results = client.evaluate()
     print("\n✅ Evaluation Accuracy:", results["accuracy"])
     print("📊 Classification Report:\n", results["report"])
 
-    # Step 6: Visualize Confusion Matrix
+    print("📉 Visualizing confusion matrix...")
     y_true = client._SecureDatasetClient__y_val
     y_pred = client._SecureDatasetClient__trained_model.predict(client._SecureDatasetClient__X_val)
     cm = confusion_matrix(y_true, y_pred)
 
-    print("y_true ",y_true)
-    print("y_pred ",y_pred)
-    
     sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", xticklabels=["No", "Yes"], yticklabels=["No", "Yes"])
     plt.title("Confusion Matrix")
     plt.xlabel("Predicted")
     plt.ylabel("Actual")
+    plt.tight_layout()
     plt.show()
 
-    # Step 7: Save the trained model
+    print("💾 Saving trained model to 'secure_spam_model.joblib'...")
     client.save_model("secure_spam_model.joblib")
 
-   
+    print("\n✅ Done! You can now load and predict securely.")
+
+    # Optional: show metadata preview (debugging/dev purpose only)
+    print("\n📌 Dataset Preview:\n", initialization.get("preview").head())
 
 if __name__ == "__main__":
     main()
