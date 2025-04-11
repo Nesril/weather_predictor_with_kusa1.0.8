@@ -59,7 +59,7 @@ def main():
     })
     client.run_preprocessing()
 
-    train_model = train_model_factory(GradientBoostingClassifier)
+    train_model = train_model_factory(RandomForestClassifier, fixed_params={"class_weight": "balanced"})
     # Step 4: Train model using internal data
     client.train(
         user_train_func=train_model,
